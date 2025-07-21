@@ -1,5 +1,11 @@
 # Open WebUI 👋
 
+## Fork Modifications
+
+This fork contains modifications from the upstream Open WebUI. See [CUSTOMIZATIONS.md](./CUSTOMIZATIONS.md) for details on all changes.
+
+---
+
 ![GitHub stars](https://img.shields.io/github/stars/open-webui/open-webui?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/open-webui/open-webui?style=social)
 ![GitHub watchers](https://img.shields.io/github/watchers/open-webui/open-webui?style=social)
