@@ -2,7 +2,6 @@ import logging
 from typing import Optional, Tuple, List, Dict, Any
 from urllib.parse import urlparse
 
-import grpc
 from open_webui.config import (
     QDRANT_API_KEY,
     QDRANT_GRPC_PORT,
@@ -10,6 +9,9 @@ from open_webui.config import (
     QDRANT_PREFER_GRPC,
     QDRANT_URI,
     QDRANT_COLLECTION_PREFIX,
+    SHARED_RAG_ENABLED,
+    SHARED_RAG_TENANT_ID,
+    SHARED_RAG_COLLECTION_NAME,
 )
 from open_webui.env import SRC_LOG_LEVELS
 from open_webui.retrieval.vector.main import (
@@ -19,7 +21,6 @@ from open_webui.retrieval.vector.main import (
     VectorItem,
 )
 from qdrant_client import QdrantClient as Qclient
-from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.http.models import PointStruct
 from qdrant_client.models import models
 
@@ -75,6 +76,7 @@ class QdrantClient(VectorDBBase):
         )
 
         # Main collection types for multi-tenancy
+        self.SHARED_COLLECTION = SHARED_RAG_COLLECTION_NAME
         self.MEMORY_COLLECTION = f"{self.collection_prefix}_memories"
         self.KNOWLEDGE_COLLECTION = f"{self.collection_prefix}_knowledge"
         self.FILE_COLLECTION = f"{self.collection_prefix}_files"
@@ -97,9 +99,13 @@ class QdrantClient(VectorDBBase):
         Returns:
             tuple: (collection_name, tenant_id)
         """
-        # Check for user memory collections
+        # Shared knowledge collection for all users
+        if SHARED_RAG_ENABLED and collection_name == SHARED_RAG_COLLECTION_NAME:
+            return self.SHARED_COLLECTION, SHARED_RAG_TENANT_ID
+
         tenant_id = collection_name
 
+        # Check for user memory collections
         if collection_name.startswith("user-memory-"):
             return self.MEMORY_COLLECTION, tenant_id
 

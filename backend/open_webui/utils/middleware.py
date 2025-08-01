@@ -58,6 +58,7 @@ from open_webui.models.functions import Functions
 from open_webui.models.models import Models
 
 from open_webui.retrieval.utils import get_sources_from_items
+from open_webui.config import SHARED_RAG_ENABLED
 
 
 from open_webui.utils.chat import generate_chat_completion
@@ -605,7 +606,8 @@ async def chat_completion_files_handler(
 ) -> tuple[dict, dict[str, list]]:
     sources = []
 
-    if files := body.get("metadata", {}).get("files", None):
+    files = body.get("metadata", {}).get("files", None) or []
+    if files or SHARED_RAG_ENABLED:
         queries = []
         try:
             queries_response = await generate_queries(

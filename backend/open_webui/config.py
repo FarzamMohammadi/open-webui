@@ -1873,6 +1873,14 @@ ENABLE_QDRANT_MULTITENANCY_MODE = (
 )
 QDRANT_COLLECTION_PREFIX = os.environ.get("QDRANT_COLLECTION_PREFIX", "open-webui")
 
+# Shared RAG Collections Configuration - Single vector collection storing shared document embeddings for all users
+# Currently only supported for Qdrant
+SHARED_RAG_ENABLED = os.environ.get("SHARED_RAG_ENABLED", "false").lower() == "true"
+SHARED_RAG_TENANT_ID = os.environ.get("SHARED_RAG_TENANT_ID", "__shared__")
+SHARED_RAG_COLLECTION_NAME = os.environ.get(
+    "SHARED_RAG_COLLECTION_NAME", "shared_knowledge_base"
+)
+
 # OpenSearch
 OPENSEARCH_URI = os.environ.get("OPENSEARCH_URI", "https://localhost:9200")
 OPENSEARCH_SSL = os.environ.get("OPENSEARCH_SSL", "true").lower() == "true"

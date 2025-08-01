@@ -1339,7 +1339,16 @@ def process_file(
         collection_name = form_data.collection_name
 
         if collection_name is None:
-            collection_name = f"file-{file.id}"
+            # Check if this is a shared file with a specific collection name
+            if (
+                file.meta
+                and file.meta.get("shared")
+                and file.meta.get("collection_name")
+            ):
+                metadata_collection_name = file.meta.get("collection_name")
+                collection_name = metadata_collection_name
+            else:
+                collection_name = f"file-{file.id}"
 
         if form_data.content:
             # Update the content in the file
@@ -1483,7 +1492,12 @@ def process_file(
                         "name": file.filename,
                         "hash": hash,
                     },
-                    add=(True if form_data.collection_name else False),
+                    add=(
+                        True
+                        if form_data.collection_name
+                        or (file.meta and file.meta.get("shared"))
+                        else False
+                    ),
                     user=user,
                 )
 

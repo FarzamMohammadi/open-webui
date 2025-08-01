@@ -24,6 +24,7 @@ from open_webui.env import SRC_LOG_LEVELS
 from open_webui.retrieval.vector.factory import VECTOR_DB_CLIENT
 
 from open_webui.models.users import Users
+from open_webui.config import SHARED_RAG_COLLECTION_NAME
 from open_webui.models.files import (
     FileForm,
     FileModel,
@@ -44,6 +45,30 @@ log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 
 router = APIRouter()
+
+
+def deserialize_metadata_or_throw(metadata: Optional[dict | str]) -> dict:
+    """
+    Validates and parses metadata from string or dict format.
+
+    Args:
+        metadata: Either a JSON string or dict object
+
+    Returns:
+        dict: Parsed metadata dictionary
+
+    Raises:
+        HTTPException: If metadata string is invalid JSON
+    """
+    if isinstance(metadata, str):
+        try:
+            return json.loads(metadata)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=ERROR_MESSAGES.DEFAULT("Invalid metadata format"),
+            )
+    return metadata if metadata else {}
 
 
 ############################
@@ -94,15 +119,7 @@ def upload_file(
 ):
     log.info(f"file.content_type: {file.content_type}")
 
-    if isinstance(metadata, str):
-        try:
-            metadata = json.loads(metadata)
-        except json.JSONDecodeError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT("Invalid metadata format"),
-            )
-    file_metadata = metadata if metadata else {}
+    file_metadata = deserialize_metadata_or_throw(metadata)
 
     try:
         unsanitized_filename = file.filename
@@ -149,6 +166,10 @@ def upload_file(
                         "content_type": file.content_type,
                         "size": len(contents),
                         "data": file_metadata,
+                        # Also store shared-file related info at top level for easy access
+                        # Required for shared-file text extraction
+                        "shared": file_metadata.get("shared", False),
+                        "collection_name": file_metadata.get("collection_name"),
                     },
                 }
             ),
@@ -213,6 +234,42 @@ def upload_file(
 
 
 ############################
+# Upload Shared File (Admin Only)
+############################
+
+
+@router.post("/shared", response_model=FileModelResponse)
+def upload_shared_file(
+    request: Request,
+    file: UploadFile = File(...),
+    metadata: Optional[dict | str] = Form(None),
+    process: bool = Query(True),
+    user=Depends(get_admin_user),
+):
+    log.info(f"Uploading shared file: {file.filename}")
+
+    if process:
+        shared_collection = SHARED_RAG_COLLECTION_NAME
+
+        # Prepare metadata with shared collection info
+        metadata_dict = deserialize_metadata_or_throw(metadata)
+        metadata_dict["shared"] = True
+        metadata_dict["collection_name"] = shared_collection
+
+    # Process the file using the regular upload logic with updated metadata
+    file_response = upload_file(
+        request=request,
+        file=file,
+        metadata=metadata_dict,
+        process=process,
+        internal=True,
+        user=user,
+    )
+
+    return file_response
+
+
+############################
 # List Files
 ############################
 
@@ -230,6 +287,27 @@ async def list_files(user=Depends(get_verified_user), content: bool = Query(True
                 del file.data["content"]
 
     return files
+
+
+############################
+# List Shared Files
+############################
+
+
+@router.get("/shared", response_model=list[FileModelResponse])
+async def list_shared_files(
+    user=Depends(get_verified_user), content: bool = Query(True)
+):
+    # Get all files and filter for shared ones
+    files = Files.get_files()
+    shared_files = [f for f in files if f.meta.get("shared", False)]
+
+    if not content:
+        for file in shared_files:
+            if "content" in file.data:
+                del file.data["content"]
+
+    return shared_files
 
 
 ############################

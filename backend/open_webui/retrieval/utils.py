@@ -34,6 +34,9 @@ from open_webui.config import (
     RAG_EMBEDDING_QUERY_PREFIX,
     RAG_EMBEDDING_CONTENT_PREFIX,
     RAG_EMBEDDING_PREFIX_FIELD_NAME,
+    SHARED_RAG_ENABLED,
+    SHARED_RAG_TENANT_ID,
+    SHARED_RAG_COLLECTION_NAME,
 )
 
 log = logging.getLogger(__name__)
@@ -318,6 +321,65 @@ def query_collection(
 
     if error and not results:
         log.warning("All collection queries failed. No results returned.")
+
+    return merge_and_sort_query_results(results, k=k)
+
+
+def query_shared_collection(
+    queries: list[str],
+    embedding_function,
+    k: int,
+    query_embeddings: Optional[list] = None,
+) -> dict:
+    """
+    Query the single shared collection using the shared tenant ID.
+    """
+    if not queries or not isinstance(queries, list):
+        log.warning("query_shared_collection: invalid queries parameter")
+        return {}
+
+    if not embedding_function:
+        log.warning("query_shared_collection: missing embedding_function parameter")
+        return {}
+
+    if not isinstance(k, int) or k <= 0:
+        log.warning(
+            "query_shared_collection: invalid k parameter, must be positive integer"
+        )
+        return {}
+
+    collection_name = SHARED_RAG_COLLECTION_NAME
+
+    # Generate embeddings for all queries (or use pre-generated ones)
+    if query_embeddings is None:
+        query_embeddings = embedding_function(
+            queries, prefix=RAG_EMBEDDING_QUERY_PREFIX
+        )
+
+    log.debug(
+        f"query_shared_collection: processing {len(queries)} queries on shared collection '{collection_name}'"
+    )
+
+    results = []
+
+    # Query the single shared collection for each query embedding
+    for query_embedding in query_embeddings:
+        try:
+            # Use regular search - tenant isolation handled automatically by _get_collection_and_tenant_id
+            result = VECTOR_DB_CLIENT.search(
+                collection_name=collection_name,
+                vectors=[query_embedding],
+                limit=k,
+            )
+            if result:
+                results.append(result.model_dump())
+        except Exception as e:
+            log.error(f"Error querying shared collection '{collection_name}': {e}")
+            continue
+
+    if not results:
+        log.warning("No results returned from shared collection query.")
+        return {}
 
     return merge_and_sort_query_results(results, k=k)
 
@@ -662,6 +724,30 @@ def get_sources_from_items(
             if "data" in item:
                 del item["data"]
             query_results.append({**query_result, "file": item})
+
+    # Query shared knowledge base collection if enabled
+    if SHARED_RAG_ENABLED and queries:
+        log.debug(
+            f"Querying shared collection '{SHARED_RAG_COLLECTION_NAME}' with {len(queries)} queries"
+        )
+
+        try:
+            # Query the single unified shared collection with tenant isolation
+            shared_query_result = query_shared_collection(
+                queries=queries, embedding_function=embedding_function, k=k
+            )
+
+            if shared_query_result:
+                # Mark results as originating from shared knowledge base
+                query_results.append(
+                    {
+                        **shared_query_result,
+                        "file": {"type": "shared", "name": "Shared Knowledge Base"},
+                    }
+                )
+
+        except Exception as e:
+            log.error(f"Error querying shared collection: {e}")
 
     sources = []
     for query_result in query_results:
